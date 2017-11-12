@@ -2,8 +2,10 @@
 package main
 
 import (
-// "fmt"
-//"strconv"
+	"fmt"
+	"os"
+	// "fmt"
+	//"strconv"
 )
 
 func main() {
@@ -34,8 +36,9 @@ func main() {
 	fmt.Println(tx)
 	*/
 	// Part4
+	fmt.Println(os.Args)
 	cli := CLI{}
-	cli.init()
-	//cli.Run()
+	cli.handleCommands(os.Args[1:])
+	//cli.init()
 
 }

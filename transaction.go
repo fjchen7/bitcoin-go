@@ -149,16 +149,16 @@ func NewCoinbaseTX(to, data string) *Transaction {
 }
 
 // create a general transaction
-func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transaction {
+func NewUTXOTransaction(from, to string, amount int, UTXOSet *UTXOSet) *Transaction {
 	var inputs []TXInput
 	var outputs []TXOutput
 
 	wallets, err := NewWallets() // load wallets
 	logErr(err)
-	wallet := wallets.GetWallet(from) // 1. load wallet by public key `from`
+	wallet := wallets.GetWallet(from) // 1. load wallet by address `from`
 	pubKeyHash := HashPubKey(wallet.PublicKey)
-	// 2. find UTXO that `from` can spend
-	acc, validOutputs := bc.FindSpendableOutputs(pubKeyHash, amount)
+	// 2. find UTXO that address `from` can spend
+	acc, validOutputs := UTXOSet.FindSpendableOutputs(pubKeyHash, amount)
 
 	if acc < amount {
 		log.Print("ERROR: Not enough funds")
@@ -184,7 +184,7 @@ func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transactio
 
 	tx := Transaction{nil, inputs, outputs}
 	tx.ID = tx.Hash()
-	bc.SignTransaction(&tx, wallet.PrivateKey)
+	UTXOSet.Blockchain.SignTransaction(&tx, wallet.PrivateKey)
 
 	return &tx
 
@@ -194,15 +194,21 @@ func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transactio
 func (tx Transaction) String() string {
 	var lines []string
 
-	lines = append(lines, fmt.Sprintf("--- Transaction %x:", tx.ID))
+	if tx.IsCoinbase() {
+		lines = append(lines, fmt.Sprintf("---   Coinbase  %x:", tx.ID))
+		lines = append(lines, fmt.Sprintf("       Data:    %s:", tx.Vin[0].PubKey))
 
-	for i, input := range tx.Vin {
+	} else {
+		lines = append(lines, fmt.Sprintf("--- Transaction %x:", tx.ID))
 
-		lines = append(lines, fmt.Sprintf("     Input %d:", i))
-		lines = append(lines, fmt.Sprintf("       TXID:      %x", input.Txid))
-		lines = append(lines, fmt.Sprintf("       Out:       %d", input.Vout))
-		lines = append(lines, fmt.Sprintf("       Signature: %x", input.Signature))
-		lines = append(lines, fmt.Sprintf("       PubKey:    %x", input.PubKey))
+		for i, input := range tx.Vin {
+
+			lines = append(lines, fmt.Sprintf("     Input %d:", i))
+			lines = append(lines, fmt.Sprintf("       TXID:      %x", input.Txid))
+			lines = append(lines, fmt.Sprintf("       Out:       %d", input.Vout))
+			lines = append(lines, fmt.Sprintf("       Signature: %x", input.Signature))
+			lines = append(lines, fmt.Sprintf("       PubKey:    %x", input.PubKey))
+		}
 	}
 
 	for i, output := range tx.Vout {

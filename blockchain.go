@@ -25,13 +25,13 @@ type Blockchain struct {
 }
 
 // mine a new block which contains `transactions`
-func (bc *Blockchain) MineBlock(transactions []*Transaction) {
+func (bc *Blockchain) MineBlock(transactions []*Transaction) *Block {
 	var lastHash []byte
 
 	for _, tx := range transactions {
 		if bc.VerifyTransaction(tx) != true {
 			log.Println("ERROR: Invalid transaction when mining")
-			return
+			return nil
 		}
 	}
 
@@ -56,6 +56,9 @@ func (bc *Blockchain) MineBlock(transactions []*Transaction) {
 
 		return nil
 	})
+	logErr(err)
+
+	return newBlock
 }
 
 // get Blockchain instance from database
@@ -98,8 +101,6 @@ func CreateBlockchain(addr string) *Blockchain {
 	logErr(err)
 
 	err = db.Update(func(tx *bolt.Tx) error { // BobtDB has two kinds of transaction（事务）: read-only and read-write. Here we open a read-write transaction.
-		//b := tx.Bucket([]byte(blocksBucket))
-
 		b, err := tx.CreateBucket([]byte(blocksBucket))
 		logErr(err)
 
@@ -119,32 +120,19 @@ func CreateBlockchain(addr string) *Blockchain {
 	return &bc
 }
 
-// return an iterator for reading block
-func (bc *Blockchain) Iterator() *BlockchainIterator {
-	bci := &BlockchainIterator{bc.tip, bc.db}
-
-	return bci
-}
-
-// return true if db file exisit, otherwise false
-func dbExists() bool {
-	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
-
-// find transaction whose tx.ID equals to `ID`
+// find transaction by tx.ID
 func (bc *Blockchain) FindTransaction(ID []byte) (Transaction, error) {
 	bci := bc.Iterator()
 
 	for {
 		block := bci.Next()
+
 		for _, tx := range block.Transactions {
 			if bytes.Compare(tx.ID, ID) == 0 {
 				return *tx, nil
 			}
 		}
+
 		if len(block.PrevBlockHash) == 0 {
 			break
 		}
@@ -152,101 +140,63 @@ func (bc *Blockchain) FindTransaction(ID []byte) (Transaction, error) {
 	return Transaction{}, errors.New("Transaction is not found")
 }
 
-// returns transactions set that contain pubKeyHash's UTXO.
-func (bc *Blockchain) FindUnspentTransactions(pubKeyHash []byte) []Transaction {
-	var unspentTXs []Transaction
-	spentTXOs := make(map[string][]int) /* txid->[no1, no2, ...]
-	it means txid Transaction's Number no1、no2... TXOutputs
-	have been spent by `pubKeyHash` */
+// find all unspent transaction outputs and returns transactions with only unspent outputs
+func (bc *Blockchain) FindUTXO() map[string]TXOutputs {
+	UTXO := make(map[string]TXOutputs)  //TxID->[output1, output2,...]
+	spentTXOs := make(map[string][]int) //TxID->[no1, no2, ...]
 	bci := bc.Iterator()
 
 	for {
-		block := bci.Next()
+		block := bci.Next() // process order: latest -> older
 
 		for _, tx := range block.Transactions {
-			txID := hex.EncodeToString(tx.ID)
+			txID := hex.EncodeToString(tx.ID) // ID of transaction 'tx'
 
 		Outputs:
-			for outIdx, out := range tx.Vout {
+			for outIdx, out := range tx.Vout { // `outIdx` is index of output `out` in transaction `tx`
+				// Was the output spent?
 				if spentTXOs[txID] != nil {
-					for _, spentOut := range spentTXOs[txID] {
-						if spentOut == outIdx {
-							/* `spendOut`==`outIdx` means that the TXOutput
-							has been spent by `pubKeyHash` */
-							continue Outputs // jump to next tx.Vout
+					for _, spentOutIdx := range spentTXOs[txID] {
+						if spentOutIdx == outIdx {
+							// `spendOutIdx`==`outIdx` means that output `out` which
+							// index is `outIdx` in transaction `tx` has been
+							// spent.
+							continue Outputs // We check the next output in transaction `tx`
 						}
 					}
 				}
-				/* If program run here, it means that `tx` has TXOutput which
-				`pubKeyHash` can spend.
-				But there needs a prerequisite: `tx` has 1 output which `pubKeyHash`
-				can spend at most, otherwise `tx` will be added many time into
-				unspentTXs set */
-				if out.IsLockedWithKey(pubKeyHash) {
-					unspentTXs = append(unspentTXs, *tx)
-				}
+
+				// If it comes to here, then output `out` in transaction `tx` is
+				// unspent, and it should be added into UTXO set.
+				outs := UTXO[txID]
+				outs.Outputs = append(outs.Outputs, out) // add `out` to `UXTO[txID]`
+				UTXO[txID] = outs
 			}
-			if tx.IsCoinbase() == false { // If `tx` is not coinbase
+
+			if tx.IsCoinbase() == false {
+				// if `tx` is not coinbase, we should record those outputs
+				// referenced in `tx.Vin` as spent
 				for _, in := range tx.Vin {
-					if in.UseKey(pubKeyHash) {
-						/* If this txin has spent `pubKeyHash`'s outputs.
-						it implies `pubKeyHash` create the txin and spent it. */
-						inTxID := hex.EncodeToString(in.Txid)
-						spentTXOs[inTxID] = append(spentTXOs[inTxID], in.Vout)
-					}
+					inTxID := hex.EncodeToString(in.Txid)
+					spentTXOs[inTxID] = append(spentTXOs[inTxID], in.Vout)
 				}
 			}
 		}
+
 		if len(block.PrevBlockHash) == 0 {
 			break
 		}
 	}
-	return unspentTXs
+
+	return UTXO
 }
 
-// return all UTXO that `pubKeyHash` can spend
-func (bc *Blockchain) FindUTXO(pubKeyHash []byte) []TXOutput {
-	var UTXOs []TXOutput
-	unspentTransactions := bc.FindUnspentTransactions(pubKeyHash)
+// return an iterator for reading block
+func (bc *Blockchain) Iterator() *BlockchainIterator {
+	bci := &BlockchainIterator{bc.tip, bc.db}
 
-	for _, tx := range unspentTransactions {
-		for _, out := range tx.Vout {
-			if out.IsLockedWithKey(pubKeyHash) {
-				UTXOs = append(UTXOs, out)
-			}
-		}
-	}
-
-	return UTXOs
-}
-
-// find UTXO set `pubKeyHash` could spend.
-// It won't find all UXTO: if total UXTO amounts is more `amount`, then
-// stop finding
-//
-// returned map: (total UTXO amounts, txid->[no1, no2, ...])
-func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (int, map[string][]int) {
-	unspentOutputs := make(map[string][]int)
-	unspentTXs := bc.FindUnspentTransactions(pubKeyHash)
-	accumulated := 0
-Work:
-	for _, tx := range unspentTXs {
-		txID := hex.EncodeToString(tx.ID)
-
-		for outIdx, out := range tx.Vout {
-			if out.IsLockedWithKey(pubKeyHash) && accumulated < amount {
-				accumulated += out.Value
-				unspentOutputs[txID] = append(unspentOutputs[txID], outIdx)
-				if accumulated >= amount {
-					break Work
-				}
-			}
-		}
-	}
-	return accumulated, unspentOutputs
-}
-
-// sign `tx` by `privKey`
+	return bci
+} // sign `tx` by `privKey`
 func (bc *Blockchain) SignTransaction(tx *Transaction, privKey ecdsa.PrivateKey) {
 	prevTXs := make(map[string]Transaction)
 
@@ -260,6 +210,10 @@ func (bc *Blockchain) SignTransaction(tx *Transaction, privKey ecdsa.PrivateKey)
 
 // Check if `tx` could be verified by old transactions in blockchain
 func (bc *Blockchain) VerifyTransaction(tx *Transaction) bool {
+
+	if tx.IsCoinbase() {
+		return true
+	}
 	prevTXs := make(map[string]Transaction)
 
 	for _, vin := range tx.Vin {
@@ -269,4 +223,12 @@ func (bc *Blockchain) VerifyTransaction(tx *Transaction) bool {
 	}
 
 	return tx.Verify(prevTXs)
+}
+
+// return true if db file exisit, otherwise false
+func dbExists() bool {
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }

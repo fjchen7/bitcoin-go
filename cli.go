@@ -2,14 +2,11 @@
 package main
 
 import (
-	"bufio"
 	"log"
 	//"flag" // flag 包用来解析命令行参数
 	//"log"
 	"fmt"
-	"os"
 	"strconv"
-	"strings"
 )
 
 type CLI struct{}
@@ -26,6 +23,7 @@ func (cli CLI) usage() {
 			`)
 }
 
+/*
 // initial CLI tool
 func (cli CLI) init() {
 	cli.usage()
@@ -42,6 +40,7 @@ func (cli CLI) init() {
 	}
 
 }
+*/
 
 // handle command arguments
 func (cli CLI) handleCommands(tokens []string) {
@@ -133,12 +132,13 @@ func (cli *CLI) getBalance(addr string) {
 		log.Panic("ERROR: Address is not valid")
 	}
 	bc := LoadBlockchain()
+	UTXOSet := UTXOSet{bc}
 	defer bc.db.Close()
 
 	balance := 0
 	pubKeyHash := Base58Decode([]byte(addr))
 	pubKeyHash = pubKeyHash[1 : len(pubKeyHash)-4]
-	UTXOs := bc.FindUTXO(pubKeyHash)
+	UTXOs := UTXOSet.FindUTXO(pubKeyHash)
 	for _, out := range UTXOs {
 		balance += out.Value
 	}
@@ -154,11 +154,16 @@ func (cli *CLI) send(from, to string, amount int) {
 		log.Panic("ERROR: Recipient address is not valid")
 	}
 	bc := LoadBlockchain()
+	UTXOSet := UTXOSet{bc}
 	defer bc.db.Close()
 
-	tx := NewUTXOTransaction(from, to, amount, bc)
-	if tx != nil {
-		bc.MineBlock([]*Transaction{tx})
+	tx := NewUTXOTransaction(from, to, amount, &UTXOSet)
+	cbTx := NewCoinbaseTX(from, "")
+	txs := []*Transaction{cbTx, tx}
+
+	newBlock := bc.MineBlock(txs) // the mined block only contains a coinbase and transaction which `from` send `to`
+	UTXOSet.Update(newBlock)      //update UTXO database
+	if newBlock != nil {
 		fmt.Println("Send Success!")
 	} else {
 		fmt.Println("Send Failed, Not Enough Amounts!")
@@ -171,6 +176,10 @@ func (cli *CLI) createBlockchain(addr string) {
 		log.Panic("ERROR: Address is not valid")
 	}
 	bc := CreateBlockchain(addr)
-	bc.db.Close()
+	defer bc.db.Close()
+
+	UTXOSet := UTXOSet{bc}
+	UTXOSet.Reindex()
+
 	fmt.Println("Create Blockchain Success!")
 }
