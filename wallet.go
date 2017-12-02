@@ -12,7 +12,7 @@ import (
 
 const (
 	addressChecksumLen = 4
-	version            = byte(0x00)
+	prefix             = byte(0x00)
 )
 
 type Wallet struct {
@@ -35,7 +35,7 @@ func NewWallet() *Wallet {
 func (w Wallet) GetAddress() []byte {
 	pubKeyHash := HashPubKey(w.PublicKey)
 
-	versionedPayload := append([]byte{version}, pubKeyHash...)
+	versionedPayload := append([]byte{prefix}, pubKeyHash...)
 	checksum := checksum(versionedPayload)
 
 	fullPayload := append(versionedPayload, checksum...)

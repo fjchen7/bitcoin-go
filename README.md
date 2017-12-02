@@ -3,6 +3,8 @@ A simplified Bitcoin implemented in Go, which is good for beginner to learn how 
 -   Original source：[Building Blockchain in Go - Ivan Kuznetsov](https://jeiwan.cc/tags/blockchain/)
 -   Usage：`go build` and `./blockchain-go`
 
+## Transaction
+
 ### UTXO Set
 
 -   Block are stored in `block` database
@@ -16,7 +18,7 @@ A simplified Bitcoin implemented in Go, which is good for beginner to learn how 
 ```
 Blockchain
 	- FindUnspentTransactions([]byte)
-	- FindSpendableOutputs
+	- FindSp:gendableOutputs
 	- FindUTXO
 	- FindTransaction
 ```
@@ -25,3 +27,15 @@ Structure in chainstate databse
 
 -   txID->out
 
+
+## Network
+
+In Bitcoin Core, there are [DNS seeds](https://bitcoin.org/en/glossary/dns-seed) hardcoded which help node find other nodes to connect Bitcoin network for the first time.
+
+We have three nodes:
+
+1.  Central node which all nodes will connect to.
+2.  Miner node which will store transactions in mempool and mine blocks.
+3.  Wallet node which will be used to send coins between wallets. Unlike SPV nodes though, it’ll store a full copy of blockchain.
+
+Scenario

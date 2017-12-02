@@ -2,10 +2,8 @@
 package main
 
 import (
-	"log"
-	//"flag" // flag 包用来解析命令行参数
-	//"log"
 	"fmt"
+	"log"
 	"strconv"
 )
 
