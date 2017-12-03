@@ -1,6 +1,8 @@
 A simplified Bitcoin implemented in Go, which is good for beginner to learn how Bitcoin work.
 
--   Original source：[Building Blockchain in Go - Ivan Kuznetsov](https://jeiwan.cc/tags/blockchain/)
+-   From
+    -   tutorial [Building Blockchain in Go - Ivan Kuznetsov](https://jeiwan.cc/tags/blockchain/)
+    -   repository [Jeiwan/blockchain_go](https://github.com/Jeiwan/blockchain_go)
 -   Usage：`go build` and `./blockchain-go`
 
 ## Transaction
@@ -15,18 +17,6 @@ A simplified Bitcoin implemented in Go, which is good for beginner to learn how 
 -   `'c' + 32-byte transaction hash -> UTXOs record for that transaction`
 -   `'B' -> 32-byte block hash: the block hash up to which the database represents the unspent transaction outputs`
 
-```
-Blockchain
-	- FindUnspentTransactions([]byte)
-	- FindSp:gendableOutputs
-	- FindUTXO
-	- FindTransaction
-```
-
-Structure in chainstate databse
-
--   txID->out
-
 
 ## Network
 
@@ -37,5 +27,3 @@ We have three nodes:
 1.  Central node which all nodes will connect to.
 2.  Miner node which will store transactions in mempool and mine blocks.
 3.  Wallet node which will be used to send coins between wallets. Unlike SPV nodes though, it’ll store a full copy of blockchain.
-
-Scenario
